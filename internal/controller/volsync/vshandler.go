@@ -381,33 +381,15 @@ func (v *VSHandler) validatePVCBeforeRS(rsSpec ramendrv1alpha1.VolSyncReplicatio
 	// the PVC and is in "Running" state before attempting to create an RS.
 	// This is a best effort to confirm the app that is using the PVC is started before trying to replicate the PVC.
 	_, err := v.getRS(getReplicationSourceName(rsSpec.ProtectedPVC.Name), rsSpec.ProtectedPVC.Namespace)
-	if err != nil && kerrors.IsNotFound(err) {
-		l.Info("ReplicationSource does not exist yet. " +
-			"validating that the PVC to be protected is in use by a ready pod ...")
-		// RS does not yet exist - consider PVC is ok if it's mounted and in use by running pod
-		inUseByReadyPod, err := v.pvcExistsAndInUse(util.ProtectedPVCNamespacedName(rsSpec.ProtectedPVC),
-			true /* Check mounting pod is Ready */)
-		if err != nil {
+	if err != nil {
+		if !kerrors.IsNotFound(err) {
+			// Err looking up the RS, return it
 			return false, err
 		}
-
-		if !inUseByReadyPod {
-			l.Info("PVC is not in use by ready pod, not creating RS yet ...")
-
-			return false, nil
-		}
-
-		l.Info("PVC is use by ready pod, proceeding to create RS ...")
-
-		return true, nil
+		l.Info("ReplicationSource does not exist, creating it now. ")
 	}
 
-	if err != nil {
-		// Err looking up the RS, return it
-		return false, err
-	}
-
-	// Replication source already exists, no need for any pvc checking
+	// Replication source either already exists or will be created
 	return true, nil
 }
 
