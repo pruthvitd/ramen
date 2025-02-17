@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-logr/logr"
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
+	rmnapi "github.com/ramendr/ramen/internal/controller/api"
 	"github.com/ramendr/ramen/internal/controller/kubeobjects"
 	"github.com/ramendr/ramen/internal/controller/util"
 	recipe "github.com/ramendr/recipe/api/v1alpha1"
@@ -22,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/yaml"
 )
 
 type RecipeElements struct {
@@ -115,9 +117,9 @@ func RecipeElementsGet(ctx context.Context, reader client.Reader, vrg ramen.Volu
 		Name:      vrg.Spec.KubeObjectProtection.RecipeRef.Name,
 	}
 
-	recipe := recipe.Recipe{}
-	if err := reader.Get(ctx, recipeNamespacedName, &recipe); err != nil {
-		return recipeElements, fmt.Errorf("recipe %v get error: %w", recipeNamespacedName.String(), err)
+	recipe, err := getRecipeObj(ctx, recipeNamespacedName, vrg, reader, ramenConfig, log)
+	if err != nil {
+		return recipeElements, err
 	}
 
 	if err := RecipeParametersExpand(&recipe, vrg.Spec.KubeObjectProtection.RecipeParameters, log); err != nil {
@@ -145,6 +147,26 @@ func RecipeElementsGet(ctx context.Context, reader client.Reader, vrg ramen.Volu
 	}
 
 	return recipeElements, nil
+}
+
+func getRecipeObj(ctx context.Context, recipeNamespacedName types.NamespacedName, vrg ramen.VolumeReplicationGroup,
+	reader client.Reader, ramenConfig ramen.RamenConfig, log logr.Logger,
+) (recipe.Recipe, error) {
+	recipe := recipe.Recipe{}
+	if vrg.Spec.KubeObjectProtection.RecipeRef.Namespace == RamenOperandsNamespace(ramenConfig) &&
+		vrg.Spec.KubeObjectProtection.RecipeRef.Name == rmnapi.VMRecipeName {
+		if err := yaml.Unmarshal([]byte(rmnapi.VMRecipe), &recipe); err != nil {
+			log.V(1).Error(err, "Recipe unmarshall error")
+
+			return recipe, fmt.Errorf("recipe %s unmarshal error: %w", rmnapi.VMRecipe, err)
+		}
+	} else if err := reader.Get(ctx, recipeNamespacedName, &recipe); err != nil {
+		return recipe, fmt.Errorf("recipe %v get error: %w", recipeNamespacedName.String(), err)
+	}
+
+	log.Info(fmt.Sprintf("Recipe obj for VRG: %s is %#v", vrg.Name, recipe))
+
+	return recipe, nil
 }
 
 func RecipeParametersExpand(recipe *recipe.Recipe, parameters map[string][]string,
