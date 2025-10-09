@@ -870,7 +870,6 @@ func (v *VRGInstance) aggregateVolSyncClusterDataConflictCondition() *metav1.Con
 		Type:               VRGConditionTypeNoClusterDataConflict,
 		Reason:             VRGConditionReasonNoConflictDetected,
 		ObservedGeneration: v.instance.Generation,
-		Message:            "No PVC conflict detected for VolumeSync scheme",
 	}
 
 	if v.validateSecondaryPVCConflictForVolsync() {

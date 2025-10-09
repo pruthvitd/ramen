@@ -1989,10 +1989,9 @@ func (v *VRGInstance) updateVRGDataReadyCondition() {
 // The VRGConditionTypeClusterDataReady summary condition is not a PVC level
 // condition and is updated elsewhere.
 func (v *VRGInstance) updateVRGConditions() {
-	var volSyncDataProtected, volSyncClusterDataProtected, volSyncClusterDataConflict *metav1.Condition
+	var volSyncDataProtected, volSyncClusterDataProtected *metav1.Condition
 	if v.instance.Spec.Sync == nil {
 		volSyncDataProtected, volSyncClusterDataProtected = v.aggregateVolSyncDataProtectedConditions()
-		volSyncClusterDataConflict = v.aggregateVolSyncClusterDataConflictCondition()
 	}
 
 	v.updateVRGDataReadyCondition()
@@ -2006,13 +2005,44 @@ func (v *VRGInstance) updateVRGConditions() {
 		v.vrgObjectProtected,
 		v.kubeObjectsProtected,
 	)
+
+	v.updateVRGNoClusterDataConflictCondition()
+
+	v.updateVRGLastGroupSyncTime()
+	v.updateVRGLastGroupSyncDuration()
+	v.updateLastGroupSyncBytes()
+}
+
+func (v *VRGInstance) updateVRGNoClusterDataConflictCondition() {
+	var volSyncClusterDataConflict *metav1.Condition
+
+	if !v.isVMRecipeProtection() {
+		condition := &metav1.Condition{
+			Status:             metav1.ConditionTrue,
+			Type:               VRGConditionTypeNoClusterDataConflict,
+			Reason:             VRGConditionReasonUnused,
+			ObservedGeneration: v.instance.Generation,
+			Message:            "Resource conflict check is not applicable for this workload",
+		}
+		v.logAndSetConditions(VRGConditionTypeNoClusterDataConflict, condition)
+
+		return
+	}
+
+	if !v.isVMRecipeProtection() {
+		newNoConflictCondition(v.instance.Generation)
+
+		return
+	}
+
+	if v.instance.Spec.Sync == nil {
+		volSyncClusterDataConflict = v.aggregateVolSyncClusterDataConflictCondition()
+	}
+
 	v.logAndSetConditions(VRGConditionTypeNoClusterDataConflict,
 		volSyncClusterDataConflict,
 		v.aggregateVRGNoClusterDataConflictCondition(),
 	)
-	v.updateVRGLastGroupSyncTime()
-	v.updateVRGLastGroupSyncDuration()
-	v.updateLastGroupSyncBytes()
 }
 
 func (v *VRGInstance) vrgReadyStatus(reason string) *metav1.Condition {
@@ -2548,7 +2578,6 @@ func (v *VRGInstance) aggregateVolRepClusterDataConflictCondition() *metav1.Cond
 		Type:               VRGConditionTypeNoClusterDataConflict,
 		Reason:             VRGConditionReasonNoConflictDetected,
 		ObservedGeneration: v.instance.Generation,
-		Message:            "No PVC conflict detected for VolumeReplication scheme",
 	}
 
 	if conflictCondition := v.validateSecondaryPVCConflictForVolRep(); conflictCondition != nil {

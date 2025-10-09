@@ -510,3 +510,13 @@ func updateVRGNoClusterDataConflictCondition(observedGeneration int64,
 		Message:            message,
 	}
 }
+
+func newNoConflictCondition(generation int64) *metav1.Condition {
+	return &metav1.Condition{
+		Status:             metav1.ConditionTrue,
+		Type:               VRGConditionTypeNoClusterDataConflict,
+		Reason:             VRGConditionReasonNoConflictDetected,
+		ObservedGeneration: generation,
+		Message:            "No resource conflict",
+	}
+}
