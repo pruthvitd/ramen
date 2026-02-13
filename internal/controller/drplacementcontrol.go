@@ -18,6 +18,7 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	clrapiv1beta1 "open-cluster-management.io/api/cluster/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -1330,6 +1331,41 @@ func (d *DRPCInstance) setupRelocation(preferredCluster string) error {
 // TODO: This hence can be corrected to remove the call to updateUserPlacementRule and further lines of code
 func (d *DRPCInstance) switchToCluster(targetCluster, targetClusterNamespace string) error {
 	d.log.Info("switchToCluster", "cluster", targetCluster)
+
+	// Determine old primary cluster
+	var oldPrimaryCluster string
+
+	for clusterName, vrg := range d.vrgs {
+		if vrg != nil && vrg.Spec.ReplicationState == rmn.Primary && clusterName != targetCluster {
+			oldPrimaryCluster = clusterName
+
+			break
+		}
+	}
+
+	// CRITICAL: Multi-layered fencing approach for failover
+	if d.instance.Spec.Action == rmn.ActionFailover {
+		d.log.Info("Initiating S3 fencing for DR action",
+			"action", d.instance.Spec.Action,
+			"oldPrimary", oldPrimaryCluster,
+			"newPrimary", targetCluster)
+
+		// Layer 1: Create S3 marker (works even if cluster is down)
+		if err := d.createFailoverMarkersInS3(targetCluster, oldPrimaryCluster); err != nil {
+			d.log.Error(err, "Failed to create S3 failover markers")
+			// Don't fail - continue with other layers
+		} else {
+			d.log.Info("S3 failover markers created successfully")
+		}
+
+		// // Layer 2: Try to fence old primary via VRG update (if accessible)
+		// if oldPrimaryCluster != "" {
+		// 	d.attemptToFenceOldPrimary(oldPrimaryCluster)
+		// 	d.log.Info("Layer 2: Old primary fence attempted")
+		// }
+
+		d.log.Info("S3 fencing complete - proceeding with cluster switch")
+	}
 
 	createdOrUpdated, err := d.createVRGManifestWorkAsPrimary(targetCluster)
 	if err != nil {
@@ -2935,4 +2971,105 @@ func removeSCCAnnotations(annotations map[string]string) map[string]string {
 	}
 
 	return filteredAnnotations
+}
+
+// createFailoverMarkersInS3 creates failover markers in all S3 profiles
+func (d *DRPCInstance) createFailoverMarkersInS3(targetCluster, sourceCluster string) error {
+	d.log.Info("Creating failover markers in S3 to suspend old primary writes",
+		"targetCluster", targetCluster)
+
+	// Get S3 profiles from any VRG
+	var s3ProfileNames []string
+
+	for _, vrg := range d.vrgs {
+		if vrg != nil && len(vrg.Spec.S3Profiles) > 0 {
+			s3ProfileNames = vrg.Spec.S3Profiles
+
+			break
+		}
+	}
+
+	if len(s3ProfileNames) == 0 {
+		d.log.Info("No S3 profiles configured in VRG")
+
+		return nil
+	}
+
+	vrgNamespace := d.vrgNamespace
+	vrgName := d.instance.Name
+
+	for _, s3ProfileName := range s3ProfileNames {
+		objectStore, _, err := d.reconciler.ObjStoreGetter.ObjectStore(
+			d.ctx,
+			d.reconciler.APIReader,
+			s3ProfileName,
+			types.NamespacedName{Namespace: d.instance.Namespace, Name: d.instance.Name}.String(),
+			d.log,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to get object store for profile %s: %w", s3ProfileName, err)
+		}
+
+		pathPrefix := s3PathNamePrefix(vrgNamespace, vrgName)
+		marker := S3FailoverMarker{
+			InitiatedBy:      "drpc-controller",
+			InitiatedAt:      metav1.Now(),
+			DRPCName:         d.instance.Name,
+			DRPCNamespace:    d.instance.Namespace,
+			FailoverCluster:  targetCluster,
+			Phase:            FailoverPhaseInitiated,
+			MarkerGeneration: time.Now().Unix(),
+			SourceCluster:    sourceCluster,
+		}
+
+		if err := objectStore.CreateFailoverMarkerForVRG(pathPrefix, marker); err != nil {
+			return fmt.Errorf("failed to create failover marker for profile %s: %w",
+				s3ProfileName, err)
+		}
+
+		d.log.Info("Failover marker created in S3",
+			"vrgNamespace", vrgNamespace,
+			"vrgName", vrgName,
+			"failoverCluster", targetCluster,
+			"s3Profile", s3ProfileName)
+	}
+
+	d.log.Info("Failover markers created successfully", "profileCount", len(s3ProfileNames))
+
+	return nil
+}
+
+// attemptToFenceOldPrimary tries to fence the old primary if accessible
+func (d *DRPCInstance) attemptToFenceOldPrimary(oldPrimaryCluster string) {
+	d.log.Info("Attempting to fence old primary cluster", "cluster", oldPrimaryCluster)
+
+	// Try to get VRG from old primary
+	vrg, err := d.getVRGFromManifestWork(oldPrimaryCluster)
+	if err != nil {
+		d.log.Info("Cannot access old primary cluster - cluster may be down",
+			"cluster", oldPrimaryCluster,
+			"error", err)
+		// Cluster is inaccessible - marker in S3 is our only defense
+		return
+	}
+
+	if vrg == nil {
+		d.log.Info("No VRG found on old primary", "cluster", oldPrimaryCluster)
+
+		return
+	}
+
+	// Cluster is accessible - update VRG to Secondary to stop writes
+	d.log.Info("Old primary cluster is accessible - updating VRG to Secondary",
+		"cluster", oldPrimaryCluster)
+
+	_, err = d.updateVRGState(oldPrimaryCluster, rmn.Secondary)
+	if err != nil {
+		d.log.Error(err, "Failed to update old primary VRG to Secondary",
+			"cluster", oldPrimaryCluster)
+		// Continue anyway - marker in S3 will still help
+	} else {
+		d.log.Info("Successfully fenced old primary via VRG update",
+			"cluster", oldPrimaryCluster)
+	}
 }

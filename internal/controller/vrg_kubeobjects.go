@@ -70,6 +70,42 @@ func (v *VRGInstance) kubeObjectsProtectPrimary(result *ctrl.Result) {
 		return
 	}
 
+	// Clean up stale failover markers if we're operational as primary
+	// This handles cases where marker removal failed during recovery
+	if v.instance.Spec.Action == "" && v.isConditionDataReady() {
+		pathPrefix := s3PathNamePrefix(v.instance.Namespace, v.instance.Name)
+		currentCluster := v.instance.GetAnnotations()[LastAppDeploymentCluster]
+
+		for _, s3StoreAccessor := range v.s3StoreAccessors {
+			// Check if marker exists
+			shouldSuspend, failoverCluster, err := s3StoreAccessor.ObjectStorer.CheckFailoverMarkerForVRG(
+				pathPrefix,
+				currentCluster,
+			)
+			if err != nil {
+				// Check if it's a stale marker error
+				if strings.Contains(err.Error(), "stale failover marker") {
+					v.log.Error(fmt.Errorf("Stale failover marker detected - removing"),
+						"profile", s3StoreAccessor.S3ProfileName)
+
+					if err := s3StoreAccessor.ObjectStorer.RemoveFailoverMarkerForVRG(pathPrefix, currentCluster); err != nil {
+						v.log.Error(err, "Failed to remove stale marker")
+					} else {
+						v.log.Info("Stale marker removed successfully")
+					}
+				}
+			} else if !shouldSuspend && failoverCluster == currentCluster {
+				// We are the failover target and marker still exists - clean it up
+				v.log.Info("Cleaning up completed failover marker",
+					"profile", s3StoreAccessor.S3ProfileName)
+
+				if err := s3StoreAccessor.ObjectStorer.RemoveFailoverMarkerForVRG(pathPrefix, currentCluster); err != nil {
+					v.log.Error(err, "Failed to remove completed failover marker")
+				}
+			}
+		}
+	}
+
 	v.kubeObjectsProtect(result)
 }
 
@@ -611,6 +647,24 @@ func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result) error {
 		return nil
 	}
 
+	pathPrefix := s3PathNamePrefix(v.instance.Namespace, v.instance.Name)
+	currentCluster := v.instance.Annotations[DestinationClusterAnnotationKey]
+	if currentCluster != "" {
+		// Update marker phase to "recovering"
+		for _, s3StoreAccessor := range v.s3StoreAccessors {
+			// pathPrefix := s3PathNamePrefix(v.instance.Namespace, v.instance.Name)
+
+			s3Store, ok := s3StoreAccessor.ObjectStorer.(*s3ObjectStore)
+			if !ok {
+				continue
+			}
+			if err := s3Store.UpdateFailoverMarkerPhase(pathPrefix, FailoverPhaseRecovering); err != nil {
+				v.log.Error(err, "Failed to update marker phase to recovering")
+				// Continue anyway - marker may not exist
+			}
+		}
+	}
+
 	for _, s3StoreAccessor := range v.s3StoreAccessors {
 		if err := v.kubeObjectsRecoverFromS3(result, s3StoreAccessor); err != nil {
 			v.log.Info("Kube objects restore error", "profile", s3StoreAccessor.S3ProfileName, "error", err)
@@ -619,6 +673,20 @@ func (v *VRGInstance) kubeObjectsRecover(result *ctrl.Result) error {
 		}
 
 		v.log.Info("Kube objects restore complete", "profile", s3StoreAccessor.S3ProfileName)
+		if currentCluster != "" {
+			// pathPrefix := s3PathNamePrefix(v.instance.Namespace, v.instance.Name)
+
+			s3Store, ok := s3StoreAccessor.ObjectStorer.(*s3ObjectStore)
+			if !ok {
+				v.log.Info("S3 store accessor is not s3ObjectStore type")
+			} else {
+				// Remove failover marker only after successful recovery
+				if err := s3Store.RemoveFailoverMarkerForVRG(pathPrefix, currentCluster); err != nil {
+					v.log.Error(err, "Failed to remove failover marker after recovery")
+				}
+				v.log.Info("Successfully removed failover marker after recovery")
+			}
+		}
 
 		return nil
 	}
