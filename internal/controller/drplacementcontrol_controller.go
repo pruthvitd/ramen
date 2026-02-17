@@ -375,6 +375,24 @@ func (r *DRPlacementControlReconciler) setCGEnabledMetric(drpc *rmn.DRPlacementC
 	cgEnabledMetrics.CGEnabled.Set(float64(enabled))
 }
 
+func (r *DRPlacementControlReconciler) setAppDRCleanupMetric(drpc *rmn.DRPlacementControl,
+	appDRCleanupMetrics *AppDRCleanupMetrics, log logr.Logger,
+) {
+	if appDRCleanupMetrics == nil {
+		return
+	}
+
+	log.Info(fmt.Sprintf("setting metric: (%s)", AppDRCleanup))
+
+	enabled := 0
+
+	if drpc.Status.Progression == rmn.ProgressionWaitOnUserToCleanUp {
+		enabled = 1
+	}
+
+	appDRCleanupMetrics.AppDRCleanup.Set(float64(enabled))
+}
+
 //nolint:funlen
 func (r *DRPlacementControlReconciler) createDRPCInstance(
 	ctx context.Context,
@@ -493,6 +511,17 @@ func (r *DRPlacementControlReconciler) createCGEnabledMetricsInstance(
 
 	return &CGEnabledMetrics{
 		CGEnabled: cgEnabledMetrics.CGEnabled,
+	}
+}
+
+func (r *DRPlacementControlReconciler) createAppDRCleanupMetricsInstance(
+	drpc *rmn.DRPlacementControl,
+) *AppDRCleanupMetrics {
+	appDRCleanupLabels := AppDRCleanupMetricLabels(drpc)
+	appDRCleanupMetrics := NewAppDRCleanupMetric(appDRCleanupLabels)
+
+	return &AppDRCleanupMetrics{
+		AppDRCleanup: appDRCleanupMetrics.AppDRCleanup,
 	}
 }
 
@@ -1649,6 +1678,9 @@ func (r *DRPlacementControlReconciler) setDRPCMetrics(ctx context.Context,
 		r.setLastSyncDurationMetric(&syncMetrics.SyncDurationMetrics, drpc.Status.LastGroupSyncDuration, log)
 		r.setLastSyncBytesMetric(&syncMetrics.SyncDataBytesMetrics, drpc.Status.LastGroupSyncBytes, log)
 	}
+
+	appDRCleanupMetrics := r.createAppDRCleanupMetricsInstance(drpc)
+	r.setAppDRCleanupMetric(drpc, appDRCleanupMetrics, log)
 
 	return nil
 }

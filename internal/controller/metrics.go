@@ -7,6 +7,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 
+	"strings"
+
 	rmn "github.com/ramendr/ramen/api/v1alpha1"
 )
 
@@ -24,6 +26,7 @@ const (
 	LastSyncDataBytes        = "last_sync_data_bytes"
 	WorkloadProtectionStatus = "workload_protection_status"
 	CGEnabled                = "unsupported_consistency_grouping_enabled"
+	AppDRCleanup             = "ramen_drpc_progression_state"
 )
 
 type SyncTimeMetrics struct {
@@ -49,6 +52,10 @@ type CGEnabledMetrics struct {
 	CGEnabled prometheus.Gauge
 }
 
+type AppDRCleanupMetrics struct {
+	AppDRCleanup prometheus.Gauge
+}
+
 type SyncMetrics struct {
 	SyncTimeMetrics
 	SyncDurationMetrics
@@ -56,11 +63,15 @@ type SyncMetrics struct {
 }
 
 const (
-	ObjType            = "obj_type"
-	ObjName            = "obj_name"
-	ObjNamespace       = "obj_namespace"
-	Policyname         = "policyname"
-	SchedulingInterval = "scheduling_interval"
+	ObjType             = "obj_type"
+	ObjName             = "obj_name"
+	ObjNamespace        = "obj_namespace"
+	Policyname          = "policyname"
+	SchedulingInterval  = "scheduling_interval"
+	DRProgressionState  = "progression_state"
+	HubClusterId        = "hub_id"
+	CleanupClusterId    = "cleanup_cluster_id"
+	ProtectedNamespaces = "protected_namespaces"
 )
 
 var (
@@ -100,6 +111,15 @@ var (
 		ObjType,      // Name of the type of the resource [drpc]
 		ObjName,      // Name of the resoure [drpc-name]
 		ObjNamespace, // DRPC namespace
+	}
+
+	appDRCleanupMetricsLabels = []string{
+		ObjName,      // Name of the protected application [drpc-name]
+		ObjNamespace, // Protected namespace
+		DRProgressionState,
+		HubClusterId,
+		CleanupClusterId,
+		ProtectedNamespaces,
 	}
 )
 
@@ -156,6 +176,15 @@ var (
 			Help:      "Unsupported consistency grouping enabled status",
 		},
 		cgEnabledMetricLabels,
+	)
+
+	appDRCleanup = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name:      AppDRCleanup,
+			Namespace: metricNamespace,
+			Help:      "DRPC progression state indicator; emitted only when WaitOnUserToCleanUp is active",
+		},
+		appDRCleanupMetricsLabels,
 	)
 )
 
@@ -273,6 +302,23 @@ func DeleteCGEnabledMetric(labels prometheus.Labels) bool {
 	return cgEnabled.Delete(labels)
 }
 
+func AppDRCleanupMetricLabels(drpc *rmn.DRPlacementControl) prometheus.Labels {
+	return prometheus.Labels{
+		ObjName:      drpc.Name,
+		ObjNamespace: strings.Join(*drpc.Spec.ProtectedNamespaces, ","),
+	}
+}
+
+func NewAppDRCleanupMetric(labels prometheus.Labels) AppDRCleanupMetrics {
+	return AppDRCleanupMetrics{
+		AppDRCleanup: appDRCleanup.With(labels),
+	}
+}
+
+func DeleteAppDRCleanupMetric(labels prometheus.Labels) bool {
+	return appDRCleanup.Delete(labels)
+}
+
 func init() {
 	// Register custom metrics with the global prometheus registry
 	metrics.Registry.MustRegister(dRPolicySyncInterval)
@@ -281,4 +327,5 @@ func init() {
 	metrics.Registry.MustRegister(lastSyncDataBytes)
 	metrics.Registry.MustRegister(workloadProtectionStatus)
 	metrics.Registry.MustRegister(cgEnabled)
+	metrics.Registry.MustRegister(appDRCleanup)
 }
