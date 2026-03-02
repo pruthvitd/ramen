@@ -97,6 +97,8 @@ func (v *VRGInstance) kubeObjectsProtect(
 		v.log.Info("Kube objects capture-to-recover-from nil")
 		v.kubeObjectsCaptureStatusFalse(VRGConditionReasonUploading, "Kube objects initial capture in-progress")
 
+		v.initializeS3Metadata()
+
 		captureToRecoverFrom = &ramen.KubeObjectsCaptureIdentifier{}
 	}
 
@@ -472,6 +474,8 @@ func (v *VRGInstance) kubeObjectsCaptureComplete(
 			*captureToRecoverFromIdentifier = captureToRecoverFromIdentifierCurrent
 		},
 	)
+
+	v.updateS3MetadataAfterCapture(captureNumber)
 }
 
 func (v *VRGInstance) kubeObjectsCaptureIdentifierUpdateComplete(
@@ -1355,4 +1359,129 @@ func getRequestsStartTime(requests []kubeobjects.Request) metav1.Time {
 	}
 
 	return metav1.Time{}
+}
+
+func (v *VRGInstance) initializeS3Metadata() {
+	if len(v.metadataRepos) == 0 {
+		v.log.Info("No metadata repositories configured")
+
+		return
+	}
+
+	vrg := v.instance
+	clusterName := v.getClusterName()
+
+	for s3ProfileName, repo := range v.metadataRepos {
+		// Check if metadata exists
+		existingMetadata, exists, err := repo.Get()
+		if err != nil {
+			v.log.Error(err, "Failed to check metadata", "s3Profile", s3ProfileName)
+
+			continue
+		}
+
+		if !exists {
+			// Create new metadata
+			metadata := NewS3StoreMetadata(
+				vrg.Name,
+				vrg.Namespace,
+				s3ProfileName,
+				clusterName,
+			)
+
+			if err := repo.Create(metadata); err != nil {
+				v.log.Error(err, "Failed to create initial metadata", "s3Profile", s3ProfileName)
+
+				continue
+			}
+
+			v.log.Info("Created initial S3 metadata", "s3Profile", s3ProfileName)
+		} else {
+			// Check for S3 profile change
+			shouldReupload, reason := existingMetadata.ShouldReupload(s3ProfileName)
+			if shouldReupload {
+				v.log.Info("S3 profile changed - will re-upload all resources",
+					"reason", reason,
+					"s3Profile", s3ProfileName,
+					"oldProfile", existingMetadata.S3ProfileName,
+					"newProfile", s3ProfileName,
+					"oldSchema", existingMetadata.SchemaVersion,
+					"newSchema", S3StoreSchemaVersion)
+
+				// Update metadata with new profile
+				existingMetadata.S3ProfileName = s3ProfileName
+				existingMetadata.ProtectionStatus = "InProgress"
+				existingMetadata.LastUpdatedAt = metav1.Now()
+				existingMetadata.LastUpdatedBy = clusterName
+				existingMetadata.SchemaVersion = S3StoreSchemaVersion
+
+				if err := repo.Update(existingMetadata); err != nil {
+					v.log.Error(err, "Failed to update metadata after profile change", "s3Profile", s3ProfileName)
+				}
+			} else {
+				v.log.V(1).Info("Metadata current for THIS bucket, no update needed",
+					"s3Profile", s3ProfileName)
+			}
+		}
+	}
+}
+
+func (v *VRGInstance) updateS3MetadataAfterCapture(captureNumber int64) {
+	if len(v.metadataRepos) == 0 {
+		v.log.Info("No metadata repositories to update")
+
+		return
+	}
+
+	clusterName := v.getClusterName()
+
+	for s3ProfileName, repo := range v.metadataRepos {
+		metadata, exists, err := repo.Get()
+		if err != nil {
+			v.log.Error(err, "Failed to get metadata for update", "s3Profile", s3ProfileName)
+
+			continue
+		}
+
+		if !exists {
+			// Create new metadata if not found
+			v.log.Info("Metadata not found during update, creating new", "s3Profile", s3ProfileName)
+			metadata = NewS3StoreMetadata(
+				v.instance.Name,
+				v.instance.Namespace,
+				s3ProfileName,
+				clusterName,
+			)
+		}
+
+		// Update metadata with capture info
+		metadata.CurrentEpoch = captureNumber
+		metadata.UpdateKubeObjectsInfo(0, captureNumber) // Count will be updated separately
+		metadata.SetProtectionComplete(clusterName)
+
+		// Save updated metadata
+		if err := repo.Update(metadata); err != nil {
+			v.log.Error(err, "Failed to update metadata after capture",
+				"s3Profile", s3ProfileName,
+				"captureNumber", captureNumber)
+
+			continue
+		}
+
+		v.log.Info("Updated S3 metadata after successful capture",
+			"s3Profile", s3ProfileName,
+			"captureNumber", captureNumber,
+			"status", metadata.ProtectionStatus)
+	}
+}
+
+func (v *VRGInstance) getClusterName() string {
+	if v.instance.Annotations == nil {
+		return ""
+	}
+
+	if clusterName := v.instance.Annotations[DestinationClusterAnnotationKey]; clusterName != "" {
+		return clusterName
+	}
+	return ""
 }
