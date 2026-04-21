@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	ramen "github.com/ramendr/ramen/api/v1alpha1"
@@ -37,6 +38,15 @@ func (v *VRGInstance) vrgObjectProtectThrottled(result *ctrl.Result,
 	eventReporter := v.reconciler.eventRecorder
 	log := v.log
 
+	if !v.s3BackupWritesAllowed() {
+		log.Info("Skipping VRG manifest S3 upload: S3 backup writes not authorized by hub")
+		v.vrgObjectProtected = newVRGClusterDataUnprotectedCondition(vrg.Generation,
+			VRGConditionReasonS3BackupFenced, "S3 backup writes fenced by hub until placement authorizes this cluster")
+		failure()
+
+		return
+	}
+
 	for _, s3StoreAccessor := range v.s3StoreAccessors {
 		log1 := log.WithValues("profile", s3StoreAccessor.S3ProfileName)
 
@@ -63,6 +73,9 @@ func (v *VRGInstance) vrgObjectProtectThrottled(result *ctrl.Result,
 		vrgLastUploadVersion.Store(v.namespacedName, vrg.ResourceVersion)
 		v.vrgObjectProtected = newVRGClusterDataProtectedCondition(vrg.Generation, vrgClusterDataProtectedTrueMessage)
 	}
+
+	t := metav1.Now()
+	vrg.Status.LastVRGObjectBackupTime = &t
 
 	success()
 }

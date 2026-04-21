@@ -148,6 +148,11 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 		When("ReplicationState is primary, but sync and async are disabled", func() {
 			It("should change DataReady message", func() {
 				vrg.Spec.ReplicationState = "primary"
+				if vrg.Annotations == nil {
+					vrg.Annotations = make(map[string]string)
+				}
+
+				vrg.Annotations[vrgController.S3BackupWriteAllowedAnnotationKey] = "true"
 				dataReadyConditionMessage := dataReadyCondition.Message
 
 				updateVRG(vrg)
@@ -166,6 +171,11 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 				vrg.Spec.Sync = &ramendrv1alpha1.VRGSyncSpec{
 					PeerClasses: syncPeerClasses,
 				}
+				if vrg.Annotations == nil {
+					vrg.Annotations = make(map[string]string)
+				}
+
+				vrg.Annotations[vrgController.S3BackupWriteAllowedAnnotationKey] = "true"
 				updateVRG(vrg)
 
 				var clusterDataReadyCondition *metav1.Condition
@@ -223,6 +233,11 @@ var _ = Describe("VolumeReplicationGroupVolRepController", func() {
 				vrg.Spec.Sync.PeerClasses = syncPeerClasses
 				vrg.ResourceVersion = ""
 				vrg.Spec.S3Profiles = []string{s3Profiles[vrgS3ProfileNumber].S3ProfileName}
+				if vrg.Annotations == nil {
+					vrg.Annotations = make(map[string]string)
+				}
+
+				vrg.Annotations[vrgController.S3BackupWriteAllowedAnnotationKey] = "true"
 				Expect(k8sClient.Create(context.TODO(), vrg)).To(Succeed())
 				Expect(apiReader.Get(context.TODO(), vrgNamespacedName, vrg)).To(Succeed())
 				Eventually(func() *metav1.Condition {
@@ -2206,6 +2221,9 @@ func (v *vrgTest) createVRG() {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      v.vrgName,
 			Namespace: v.namespace,
+			Annotations: map[string]string{
+				vrgController.S3BackupWriteAllowedAnnotationKey: "true",
+			},
 		},
 		Spec: ramendrv1alpha1.VolumeReplicationGroupSpec{
 			PVCSelector:      metav1.LabelSelector{MatchLabels: v.pvcLabels},

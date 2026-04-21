@@ -80,6 +80,14 @@ func (v *VRGInstance) kubeObjectsProtect(
 		return
 	}
 
+	if !v.s3BackupWritesAllowed() {
+		v.log.Info("Skipping kube objects capture: S3 backup writes not authorized by hub")
+		v.kubeObjectsCaptureStatusFalse(VRGConditionReasonS3BackupFenced,
+			"S3 backup writes fenced by hub until placement authorizes this cluster")
+
+		return
+	}
+
 	// TODO tolerate and remove
 	if len(v.s3StoreAccessors) == 0 {
 		v.log.Info("Kube objects capture store list empty")

@@ -75,6 +75,7 @@ const (
 	VRGConditionReasonUploading                   = "Uploading"
 	VRGConditionReasonUploaded                    = "Uploaded"
 	VRGConditionReasonUploadError                 = "UploadError"
+	VRGConditionReasonS3BackupFenced              = "S3BackupFenced"
 	VRGConditionReasonVolSyncRepSourceInited      = "SourceInitialized"
 	VRGConditionReasonVolSyncRepDestInited        = "DestinationInitialized"
 	VRGConditionReasonVolSyncPVsRestored          = "Restored"

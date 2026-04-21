@@ -757,6 +757,14 @@ func (v *VRGInstance) UploadPVAndPVCtoS3(s3ProfileName string, objectStore Objec
 func (v *VRGInstance) UploadPVandPVCtoS3Stores(pvc *corev1.PersistentVolumeClaim,
 	log logr.Logger,
 ) ([]string, error) {
+	if !v.s3BackupWritesAllowed() {
+		v.log.Info("Skipping PV/PVC upload to S3: S3 backup writes not authorized by hub")
+		v.updatePVCClusterDataProtectedCondition(pvc.Namespace, pvc.Name, VRGConditionReasonS3BackupFenced,
+			"S3 backup writes fenced by hub until placement authorizes this cluster")
+
+		return nil, ErrS3BackupFenceActive
+	}
+
 	succeededProfiles := []string{}
 	// Upload the PV to all the S3 profiles in the VRG spec
 	for _, s3ProfileName := range v.instance.Spec.S3Profiles {
@@ -2014,7 +2022,7 @@ func setPVCClusterDataProtectedCondition(protectedPVC *ramendrv1alpha1.Protected
 		setVRGClusterDataProtectedCondition(&protectedPVC.Conditions, observedGeneration, message)
 	case VRGConditionReasonUploading:
 		setVRGClusterDataProtectingCondition(&protectedPVC.Conditions, observedGeneration, message)
-	case VRGConditionReasonUploadError, VRGConditionReasonClusterDataAnnotationFailed:
+	case VRGConditionReasonUploadError, VRGConditionReasonClusterDataAnnotationFailed, VRGConditionReasonS3BackupFenced:
 		setVRGClusterDataUnprotectedCondition(&protectedPVC.Conditions, observedGeneration, reason, message)
 	default:
 		// if appropriate reason is not provided, then treat it as an unknown condition.

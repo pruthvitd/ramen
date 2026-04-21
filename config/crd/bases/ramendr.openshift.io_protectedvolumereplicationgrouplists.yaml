@@ -1913,6 +1913,12 @@ spec:
                           format: date-time
                           nullable: true
                           type: string
+                        lastVRGObjectBackupTime:
+                          description: |-
+                            lastVRGObjectBackupTime is the time of the most recent successful upload of the VRG
+                            manifest object to all configured S3 profiles (authoritative completion marker for that stream).
+                          format: date-time
+                          type: string
                         observedGeneration:
                           description: observedGeneration is the last generation change
                             the operator has dealt with

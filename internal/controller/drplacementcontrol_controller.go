@@ -59,6 +59,10 @@ const (
 
 	DestinationClusterAnnotationKey = "drplacementcontrol.ramendr.openshift.io/destination-cluster"
 
+	// S3BackupWriteAllowedAnnotationKey is set by the hub on VRG ManifestWork. When "true", this cluster
+	// is the placement home and may write VRG and kube-object backups to S3. When "false", S3 writes are fenced.
+	S3BackupWriteAllowedAnnotationKey = "drplacementcontrol.ramendr.openshift.io/s3-backup-write-allowed"
+
 	DoNotDeletePVCAnnotation    = "drplacementcontrol.ramendr.openshift.io/do-not-delete-pvc"
 	DoNotDeletePVCAnnotationVal = "true"
 
@@ -2666,6 +2670,25 @@ func adoptVRG(
 	return !adopted
 }
 
+// s3BackupWriteAllowedAnnotationForAdopt sets S3 fencing on a VRG when the full DRPC reconcile path is not available.
+// It uses preferred decision / spec only (not live Placement), matching adoption constraints.
+func s3BackupWriteAllowedAnnotationForAdopt(drpc *rmn.DRPlacementControl, vrg *rmn.VolumeReplicationGroup, vrgCluster string) string {
+	if vrg.Spec.ReplicationState != rmn.Primary {
+		return "false"
+	}
+
+	authorized := drpc.Status.PreferredDecision.ClusterName
+	if authorized == "" {
+		authorized = drpc.Spec.PreferredCluster
+	}
+
+	if authorized != "" && authorized == vrgCluster {
+		return "true"
+	}
+
+	return "false"
+}
+
 // adoptExistingVRGManifestWork updates an existing VRG ManifestWork as managed by the current DRPC resource
 func adoptExistingVRGManifestWork(
 	log logr.Logger,
@@ -2690,6 +2713,7 @@ func adoptExistingVRGManifestWork(
 	}
 
 	vrg.Annotations[DRPCUIDAnnotation] = string(drpc.UID)
+	vrg.Annotations[S3BackupWriteAllowedAnnotationKey] = s3BackupWriteAllowedAnnotationForAdopt(drpc, vrg, cluster)
 
 	annotations := make(map[string]string)
 	annotations[DRPCNameAnnotation] = drpc.Name
@@ -2731,6 +2755,7 @@ func adoptOrphanVRG(
 	}
 
 	vrg.Annotations[DRPCUIDAnnotation] = string(drpc.UID)
+	vrg.Annotations[S3BackupWriteAllowedAnnotationKey] = s3BackupWriteAllowedAnnotationForAdopt(drpc, vrg, cluster)
 
 	if _, err := mwu.CreateOrUpdateVRGManifestWork(
 		drpc.Name, vrgNamespace,

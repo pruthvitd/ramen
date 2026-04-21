@@ -426,6 +426,11 @@ type VolumeReplicationGroupStatus struct {
 	// successful synchronization of all PVCs
 	//+optional
 	LastGroupSyncBytes *int64 `json:"lastGroupSyncBytes,omitempty"`
+
+	// lastVRGObjectBackupTime is the time of the most recent successful upload of the VRG
+	// manifest object to all configured S3 profiles (authoritative completion marker for that stream).
+	//+optional
+	LastVRGObjectBackupTime *metav1.Time `json:"lastVRGObjectBackupTime,omitempty"`
 }
 
 // +kubebuilder:object:root=true

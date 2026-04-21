@@ -1818,6 +1818,7 @@ func (d *DRPCInstance) updateVRGOptionalFields(vrg, vrgFromView *rmn.VolumeRepli
 		DRPCUIDAnnotation:                     string(d.instance.UID),
 		rmnutil.UseVolSyncAnnotation:          d.instance.GetAnnotations()[rmnutil.UseVolSyncAnnotation],
 		rmnutil.IsSubmarinerEnabledAnnotation: d.instance.GetAnnotations()[rmnutil.IsSubmarinerEnabledAnnotation],
+		S3BackupWriteAllowedAnnotationKey:     d.s3BackupWriteAllowedAnnotationValue(vrg, homeCluster),
 	}
 
 	vrg.Spec.ProtectedNamespaces = d.instance.Spec.ProtectedNamespaces
@@ -1886,6 +1887,38 @@ func (d *DRPCInstance) setVRGAction(vrg *rmn.VolumeReplicationGroup) {
 	}
 
 	vrg.Spec.Action = action
+}
+
+// clusterAuthorizedForS3BackupWrites returns the managed cluster name that may perform S3 backup writes
+// for this DRPC, or "" if the hub cannot determine it yet.
+func (d *DRPCInstance) clusterAuthorizedForS3BackupWrites() string {
+	cd := d.reconciler.getClusterDecision(d.userPlacement)
+	if cd.ClusterName != "" {
+		return cd.ClusterName
+	}
+
+	if d.instance.Status.PreferredDecision.ClusterName != "" {
+		return d.instance.Status.PreferredDecision.ClusterName
+	}
+
+	if d.instance.Spec.PreferredCluster != "" {
+		return d.instance.Spec.PreferredCluster
+	}
+
+	return ""
+}
+
+func (d *DRPCInstance) s3BackupWriteAllowedAnnotationValue(vrg *rmn.VolumeReplicationGroup, vrgCluster string) string {
+	if vrg.Spec.ReplicationState != rmn.Primary {
+		return "false"
+	}
+
+	authorized := d.clusterAuthorizedForS3BackupWrites()
+	if authorized != "" && authorized == vrgCluster {
+		return "true"
+	}
+
+	return "false"
 }
 
 func (d *DRPCInstance) newVRG(

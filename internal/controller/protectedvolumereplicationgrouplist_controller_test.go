@@ -139,6 +139,10 @@ func vrgStatusStateUpdate(vrgS3, vrgK8s *ramen.VolumeReplicationGroup) {
 	if vrgS3.Status.State == vrgK8s.Status.State {
 		vrgS3.Status.LastUpdateTime = vrgK8s.Status.LastUpdateTime
 	}
+
+	if vrgK8s.Status.LastVRGObjectBackupTime != nil {
+		vrgS3.Status.LastVRGObjectBackupTime = vrgK8s.Status.LastVRGObjectBackupTime
+	}
 }
 
 var _ = Describe("ProtectedVolumeReplicationGroupListController", func() {
