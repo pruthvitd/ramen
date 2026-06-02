@@ -120,6 +120,42 @@ spec:
                           description: VRGAsyncSpec has the parameters associated
                             with RegionalDR
                           properties:
+                            networkMappings:
+                              description: Network mappings for IP translation
+                              items:
+                                properties:
+                                  clusterIDs:
+                                    items:
+                                      type: string
+                                    type: array
+                                  destCluster:
+                                    type: string
+                                  destNamespace:
+                                    type: string
+                                  destSubnet:
+                                    type: string
+                                  name:
+                                    type: string
+                                  sourceCluster:
+                                    type: string
+                                  sourceNamespace:
+                                    type: string
+                                  sourceSubnet:
+                                    type: string
+                                  translationMethod:
+                                    type: string
+                                required:
+                                - clusterIDs
+                                - destCluster
+                                - destNamespace
+                                - destSubnet
+                                - name
+                                - sourceCluster
+                                - sourceNamespace
+                                - sourceSubnet
+                                - translationMethod
+                                type: object
+                              type: array
                             peerClasses:
                               description: |-
                                 PeerClasses is a list of common StorageClasses across the clusters in a policy that have related

@@ -2282,6 +2282,9 @@ func (d *DRPCInstance) updateVRGAsyncSpec(vrgFromView, vrg *rmn.VolumeReplicatio
 		cgAnnotationExists,
 	)
 
+	// Network mapping propagation
+	asyncSpec.NetworkMappings = d.drPolicy.Status.NetworkMappings
+
 	// TODO: prune peerClasses not in policy and not in use by VRG
 
 	vrg.Spec.Async = asyncSpec

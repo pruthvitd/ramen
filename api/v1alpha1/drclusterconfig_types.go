@@ -65,6 +65,17 @@ type DRClusterConfigStatus struct {
 
 	// StorageAccessDetails lists the storage access information for each storage provisioner detected on the cluster.
 	StorageAccessDetails []StorageAccessDetail `json:"storageAccessDetails,omitempty"`
+
+	// Discovered network attachments
+	NetworkAttachments []NetworkAttachment `json:"networkAttachments,omitempty"`
+}
+
+type NetworkAttachment struct {
+    Name      string `json:"name"`
+    Namespace string `json:"namespace"`
+    Type      string `json:"type"` // "UDN", "Bridge", "MacVLAN"
+    Subnet    string `json:"subnet"`
+    IPAMType  string `json:"ipamType"`
 }
 
 // StorageAccessDetail contains storage access information for a specific storage provisioner.

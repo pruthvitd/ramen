@@ -350,6 +350,42 @@ spec:
                   - type
                   type: object
                 type: array
+              networkMappings:
+                description: Network Mappings
+                items:
+                  properties:
+                    clusterIDs:
+                      items:
+                        type: string
+                      type: array
+                    destCluster:
+                      type: string
+                    destNamespace:
+                      type: string
+                    destSubnet:
+                      type: string
+                    name:
+                      type: string
+                    sourceCluster:
+                      type: string
+                    sourceNamespace:
+                      type: string
+                    sourceSubnet:
+                      type: string
+                    translationMethod:
+                      type: string
+                  required:
+                  - clusterIDs
+                  - destCluster
+                  - destNamespace
+                  - destSubnet
+                  - name
+                  - sourceCluster
+                  - sourceNamespace
+                  - sourceSubnet
+                  - translationMethod
+                  type: object
+                type: array
               sync:
                 description: |-
                   DRPolicyStatus.Sync contains the status of observed

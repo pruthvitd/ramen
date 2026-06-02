@@ -126,6 +126,28 @@ spec:
                   - type
                   type: object
                 type: array
+              networkAttachments:
+                description: Discovered network attachments
+                items:
+                  properties:
+                    ipamType:
+                      type: string
+                    name:
+                      type: string
+                    namespace:
+                      type: string
+                    subnet:
+                      type: string
+                    type:
+                      type: string
+                  required:
+                  - ipamType
+                  - name
+                  - namespace
+                  - subnet
+                  - type
+                  type: object
+                type: array
               networkFenceClasses:
                 description: |-
                   NetworkFenceClass lists all the classes that match the provisioner on the cluster that can be used for fencing

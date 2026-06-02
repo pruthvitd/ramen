@@ -68,6 +68,9 @@ type VRGAsyncSpec struct {
 	// creates a PVC using a newer StorageClass that is determined to be common across the peers.
 	//+optional
 	PeerClasses []PeerClass `json:"peerClasses,omitempty"`
+
+	// Network mappings for IP translation
+	NetworkMappings []NetworkMapping `json:"networkMappings,omitempty"`
 }
 
 // VRGSyncSpec has the parameters associated with VE
