@@ -64,6 +64,21 @@ type DRPolicyStatus struct {
 	// sync replication details between the clusters in the policy
 	//+optional
 	Sync Sync `json:"sync,omitempty"`
+
+	// Network Mappings
+	NetworkMappings []NetworkMapping `json:"networkMappings,omitempty"`
+}
+
+type NetworkMapping struct {
+    Name              string   `json:"name"`
+    SourceCluster     string   `json:"sourceCluster"`
+    SourceNamespace   string   `json:"sourceNamespace"`
+    SourceSubnet      string   `json:"sourceSubnet"`
+    DestCluster       string   `json:"destCluster"`
+    DestNamespace     string   `json:"destNamespace"`
+    DestSubnet        string   `json:"destSubnet"`
+    TranslationMethod string   `json:"translationMethod"`
+    ClusterIDs        []string `json:"clusterIDs"`
 }
 
 // for RDR

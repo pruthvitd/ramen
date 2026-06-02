@@ -153,6 +153,11 @@ func (r *DRPolicyReconciler) reconcile(
 		return ctrl.Result{}, fmt.Errorf("drpolicy peerClass update: %w", err)
 	}
 
+	// NEW: Network mapping update
+	if err := updateNetworkMappings(u, r.MCVGetter); err != nil {
+	        return ctrl.Result{}, err
+        }
+
 	if err := propagateS3Secret(u.object, drclusters, secretsUtil, ramenConfig, u.log); err != nil {
 		return ctrl.Result{}, fmt.Errorf("drpolicy deploy: %w", err)
 	}

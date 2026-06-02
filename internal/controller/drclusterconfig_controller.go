@@ -14,6 +14,7 @@ import (
 	volrep "github.com/csi-addons/kubernetes-csi-addons/api/replication.storage/v1alpha1"
 	"github.com/go-logr/logr"
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v8/apis/volumesnapshot/v1"
+	netattdefv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	groupsnapv1beta1 "github.com/red-hat-storage/external-snapshotter/client/v8/apis/volumegroupsnapshot/v1beta1"
 	"golang.org/x/time/rate"
 	storagev1 "k8s.io/api/storage/v1"
@@ -71,6 +72,7 @@ type DRClusterConfigReconciler struct {
 // +kubebuilder:rbac:groups=cluster.open-cluster-management.io,resources=clusterclaims,verbs=get;list;watch;create;update;delete
 // +kubebuilder:rbac:groups=csiaddons.openshift.io,resources=networkfenceclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=csiaddons.openshift.io,resources=csiaddonsnodes,verbs=get;list;watch
+// +kubebuilder:rbac:groups=k8s.cni.cncf.io,resources=network-attachment-definitions,verbs=get;list;watch
 
 func (r *DRClusterConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("drcc", req.NamespacedName.Name, "rid", util.GetRID())
@@ -340,6 +342,13 @@ func (r *DRClusterConfigReconciler) UpdateStatus(
 
 	drCConfig.Status.StorageAccessDetails = storageAccessDetails
 
+	// Network discovery
+	networkAttachments, err := r.listDRSupportedNADs(ctx)
+	if err != nil {
+		return err
+	}
+	drCConfig.Status.NetworkAttachments = networkAttachments
+
 	return nil
 }
 
@@ -583,3 +592,29 @@ func (r *DRClusterConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&csiaddonsv1alpha1.CSIAddonsNode{}, drccMapFn, drccPredFn).
 		Complete(r)
 }
+
+func (r *DRClusterConfigReconciler) listDRSupportedNADs(ctx context.Context) ([]ramen.NetworkAttachment, error) {
+	nads := []ramen.NetworkAttachment{}
+
+	// List NADs with DR label
+	nadList := &netattdefv1.NetworkAttachmentDefinitionList{}
+	if err := r.Client.List(ctx, nadList); err != nil {
+		return nil, err
+	}
+
+	for _, nad := range nadList.Items {
+		if !util.HasLabel(&nad, "ramen.openshift.io/dr-enabled") {
+			continue
+		}
+
+		nads = append(nads, ramen.NetworkAttachment{
+			Name:      nad.Name,
+			Namespace: nad.Namespace,
+		})
+	}
+
+	return nads, nil
+}
+
+
+
